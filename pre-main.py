@@ -1,11 +1,15 @@
-import threading
+from abc import abstractproperty
+from concurrent.futures.thread import ThreadPoolExecutor
 import asyncio
 import io
 
 import pytesseract
+import numpy as np
 from PIL import Image
 from ppadb.client_async import ClientAsync as AdbClient
 
+class BruhError(Exception):
+    ...
 
 def primes(n):
     primfac = []
@@ -45,6 +49,19 @@ numbers = {
     53: (400, 1395),
 }
 
+async def img(device):
+    pil_image = Image.open('Image.jpg').convert('RGB') 
+    open_cv_image = np.array(pil_image) 
+    open_cv_image = open_cv_image[:, :, ::-1].copy() 
+
+async def _ocr(device):
+    result = pytesseract.image_to_string(
+                Image.open(io.BytesIO(await device.screencap())).crop(
+                    (165, 370, 665, 730)
+                ),
+                config="nobatch digits -l eng --oem 3 --psm 6 -c tessedit_char_whitelist=0123456789",
+                )
+    return int(''.join(filter(str.isdigit, result))) if result != "" else _ocr(device)
 
 async def main():
     client = AdbClient()
@@ -56,25 +73,20 @@ async def main():
 
     while True:
         try:
-            result = int(
-                pytesseract.image_to_string(
-                    Image.open(io.BytesIO(await device.screencap())).crop(
-                        (167, 374, 665, 928)
-                    ),
-                    config="outputbase nobatch digits --psm 6 --oem 3 -c tessedit_char_whitelist=0123456789",
-                ),
-            )
+            result = await _ocr(device)
             print(result)
-            for n in primes(result):
-                threading.Thread(
-                    target=asyncio.run,
-                    args=(device.shell(f"input tap {(n := numbers[n])[0]} {n[1]}"),),
-                ).start()
+            p = primes(result)
+            with ThreadPoolExecutor() as executor:
+                for n in p:
+                    if n not in numbers.keys():
+                        print("bruh")
+                        raise BruhError("Ignore this error, this only happens when number from _ocr is wrong")
+                    n2 = numbers[n]
+                    executor.submit(asyncio.run, device.shell(f"input tap {n2[0]} {n2[1]}"))
             await device.shell(f"input tap 600 1335")
-            await asyncio.sleep(3)
+            await asyncio.sleep(1.7)
         except Exception as e:
-            print(type(e), e)
-
+            print(e.__class__.__name__, e)
 
 asyncio.run(main())
 
