@@ -1,27 +1,10 @@
-from concurrent.futures.thread import ThreadPoolExecutor
-import asyncio
+import threading
+import time
 import io
 
 import pytesseract
-import numpy as np
 from PIL import Image
-from ppadb.client_async import ClientAsync as AdbClient
-
-class BruhError(Exception):
-    ...
-
-def primes(n):
-    primfac = []
-    d = 2
-    while d * d <= n:
-        while (n % d) == 0:
-            primfac.append(d)
-            n //= d
-        d += 1
-    if n > 1:
-        primfac.append(n)
-    return primfac
-
+from ppadb.client import Client as AdbClient
 
 """
 the coordinates in your device might be different
@@ -48,45 +31,63 @@ numbers = {
     53: (400, 1395),
 }
 
-async def img(device):
-    pil_image = Image.open('Image.jpg').convert('RGB') 
-    open_cv_image = np.array(pil_image) 
-    open_cv_image = open_cv_image[:, :, ::-1].copy() 
-
-async def _ocr(device):
-    result = pytesseract.image_to_string(
-                Image.open(io.BytesIO(await device.screencap())).crop(
+def _ocr(device):
+    result = ''.join(filter(str.isdigit, pytesseract.image_to_string(
+                Image.open(io.BytesIO(device.screencap())).crop(
                     (165, 370, 665, 730)
                 ),
-                config="nobatch digits -l eng --oem 3 --psm 6 -c tessedit_char_whitelist=0123456789",
-                )
-    return int(''.join(filter(str.isdigit, result))) if result != "" else _ocr(device)
+                lang="eng",
+                config="--oem 3 --psm 6 -c tessedit_char_whitelist=0123456789",
+            )
+        )
+    )
+    return int(result) if result != "" else _ocr(device)
 
-async def main():
+def prime_tap(device, n):
+    threads = []
+    d = 2
+    while d * d <= n:
+        while (n % d) == 0:
+            if d in numbers:
+                n2 = numbers[d]
+                t = threading.Thread(target=device.shell, args=(f"input tap {n2[0]} {n2[1]}",)) # number buttons
+                threads.append(t)
+                t.start()
+            else:
+                return
+            n //= d
+        d += 1
+    if n > 1:
+        if n in numbers:
+            n2 = numbers[n]
+            t = threading.Thread(target=device.shell, args=(f"input tap {n2[0]} {n2[1]}",)) # number buttons
+            threads.append(t)
+            t.start()
+        else:
+            return
+    for thread in threads:
+        thread.join()
+    device.shell("input tap 600 1335",) # attack button
+
+def main():
+    prev = ()
+    threads = []
     client = AdbClient()
 
-    device = await client.devices()
+    device = client.devices()
     device = device[0]
 
     input()
 
     while True:
         try:
-            result = await _ocr(device)
+            result = _ocr(device)
             print(result)
-            p = primes(result)
-            with ThreadPoolExecutor() as executor:
-                for n in p:
-                    if n not in numbers.keys():
-                        print("bruh")
-                        raise BruhError("Ignore this error, this only happens when number from _ocr is wrong")
-                    n2 = numbers[n]
-                    executor.submit(asyncio.run, device.shell(f"input tap {n2[0]} {n2[1]}"))
-            await device.shell(f"input tap 600 1335")
-            await asyncio.sleep(1.7)
+            prime_tap(device, result)
+            time.sleep(1.7)
+        except KeyboardInterrupt:
+            break
         except Exception as e:
             print(e.__class__.__name__, e)
 
-asyncio.run(main())
-
-input()
+main()
