@@ -70,8 +70,6 @@ def prime_tap(device, n):
     device.shell("input tap 600 1335",) # attack button
 
 def main():
-    prev = ()
-    threads = []
     client = AdbClient()
 
     device = client.devices()
