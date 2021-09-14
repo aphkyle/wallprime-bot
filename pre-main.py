@@ -1,6 +1,5 @@
 import threading
 import time
-import io
 
 import cv2
 import numpy as np
@@ -37,7 +36,7 @@ numbers = {
 }
 
 def _ocr(device):
-    b = np.array(np.frombuffer(io.BytesIO(device.screencap())).crop(
+    b = np.array(np.frombuffer(device.screencap()).crop(
                     (165, 370, 665, 900)
             ).convert("RGB"))
      
